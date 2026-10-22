@@ -73,7 +73,6 @@ class RecipeRequest(BaseModel):
     time_limit_minutes: int = 30
     restrictions: List[str] = []
 
-
 @app.post("/generate-recipe")
 def generate_recipe(req: RecipeRequest):
     restrictions_text = ", ".join(req.restrictions) if req.restrictions else "none"
@@ -101,7 +100,6 @@ Return ONLY JSON in exactly this shape:
   "follows_restrictions": true
 }}
 """
-
     try:
         response = call_gemini(
             prompt,
@@ -112,6 +110,7 @@ Return ONLY JSON in exactly this shape:
         raise HTTPException(status_code=500, detail=f"Recipe generation failed: {e}")
 
     return recipe
+
 MEALDB = "https://www.themealdb.com/api/json/v1/1"
 
 MEAT_WORDS = ["chicken", "beef", "pork", "lamb", "bacon", "ham", "sausage",
@@ -132,7 +131,6 @@ BLOCKED = {
 MEAT_CATEGORIES = {"Beef", "Chicken", "Lamb", "Pork", "Seafood", "Goat"}
 PANTRY = ["salt", "pepper", "water", "oil"]
 
-
 def get_meal_ingredients(meal):
     names = []
     for i in range(1, 21):
@@ -140,7 +138,6 @@ def get_meal_ingredients(meal):
         if name:
             names.append(name)
     return names
-
 
 def breaks_restriction(meal, ings, restrictions):
     for r in restrictions:
@@ -152,12 +149,11 @@ def breaks_restriction(meal, ings, restrictions):
                 return True
     return False
 
-
 @app.post("/find-recipes")
 def find_recipes(req: RecipeRequest):
     mine = [i.lower().strip() for i in req.ingredients]
 
-    # 1. Collect candidate meal IDs from TheMealDB
+    #get meal ids 
     ids = []
     for item in mine:
         try:
@@ -170,7 +166,7 @@ def find_recipes(req: RecipeRequest):
             continue
     ids = ids[:20]
 
-    # 2. Get full details, filter, score
+    #get meal info and filter/score
     results = []
     for meal_id in ids:
         try:
@@ -181,7 +177,7 @@ def find_recipes(req: RecipeRequest):
 
         ings = get_meal_ingredients(meal)
 
-        # Hard filter
+        #restriction filter
         if breaks_restriction(meal, ings, req.restrictions):
             continue
 
@@ -200,7 +196,7 @@ def find_recipes(req: RecipeRequest):
             "steps": meal.get("strInstructions"),
         })
 
-    # 3. Rank: highest % of ingredients owned first
+    #rank by % ingreedients they have
     results.sort(key=lambda x: x["percent_owned"], reverse=True)
     if not results:
         return {
