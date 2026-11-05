@@ -9,6 +9,7 @@ from google import genai
 from google.genai import types
 from typing import List
 from pydantic import BaseModel
+from db import engine, SessionLocal, Base, User, IngredientList
 
 load_dotenv()
 MODEL = "gemini-3.1-flash-lite"
@@ -24,6 +25,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+Base.metadata.create_all(engine)  #creates tables if they don't exist
 
 def call_gemini(contents, config, tries=4):
     for attempt in range(tries):
@@ -265,3 +267,65 @@ Return ONLY a JSON array in exactly this shape:
             "message": "No recipes matched. Try a longer time limit or different ingredients.",
         }
     return {"recipes": top}
+
+#database (profiles and saved ingredients)
+class UserCreate(BaseModel):
+    name: str
+    restrictions: List[str] = []
+
+
+class IngredientsSave(BaseModel):
+    ingredients: List[str]
+
+
+@app.post("/users")
+def create_user(data: UserCreate):
+    with SessionLocal() as db:
+        user = User(name=data.name, restrictions=data.restrictions)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return {"id": user.id, "name": user.name, "restrictions": user.restrictions}
+
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int):
+    with SessionLocal() as db:
+        user = db.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"id": user.id, "name": user.name, "restrictions": user.restrictions}
+
+
+@app.put("/users/{user_id}")
+def update_user(user_id: int, data: UserCreate):
+    with SessionLocal() as db:
+        user = db.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        user.name = data.name
+        user.restrictions = data.restrictions
+        db.commit()
+        return {"id": user.id, "name": user.name, "restrictions": user.restrictions}
+
+
+@app.post("/users/{user_id}/ingredients")
+def save_ingredients(user_id: int, data: IngredientsSave):
+    with SessionLocal() as db:
+        if not db.get(User, user_id):
+            raise HTTPException(status_code=404, detail="User not found")
+        db.add(IngredientList(user_id=user_id, ingredients=data.ingredients))
+        db.commit()
+        return {"saved": True, "ingredients": data.ingredients}
+
+
+@app.get("/users/{user_id}/ingredients")
+def load_ingredients(user_id: int):
+    with SessionLocal() as db:
+        row = (
+            db.query(IngredientList)
+            .filter(IngredientList.user_id == user_id)
+            .order_by(IngredientList.created_at.desc())
+            .first()
+        )
+        return {"ingredients": row.ingredients if row else []}
