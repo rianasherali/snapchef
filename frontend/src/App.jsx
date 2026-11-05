@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const API = "http://127.0.0.1:8002";
 const RESTRICTIONS = ["vegetarian", "vegan", "halal", "gluten-free", "dairy-free", "nut-free"];
 
 export default function App() {
+  const [userId, setUserId] = useState(localStorage.getItem("userId"));
+  const [name, setName] = useState("");
+  const [profileMsg, setProfileMsg] = useState("");
+
   const [file, setFile] = useState(null);
   const [ingredients, setIngredients] = useState([]);
   const [newItem, setNewItem] = useState("");
@@ -17,6 +21,65 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
+
+  // On page load, restore the saved profile from the database
+  useEffect(() => {
+    if (!userId) return;
+    fetch(`${API}/users/${userId}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((u) => {
+        setName(u.name);
+        setRestrictions(u.restrictions);
+        setProfileMsg(`Welcome back, ${u.name}!`);
+      })
+      .catch(() => {
+        localStorage.removeItem("userId");
+        setUserId(null);
+      });
+  }, []);
+
+  async function saveProfile() {
+    if (!name.trim()) {
+      setProfileMsg("Enter a name first.");
+      return;
+    }
+    try {
+      const url = userId ? `${API}/users/${userId}` : `${API}/users`;
+      const res = await fetch(url, {
+        method: userId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), restrictions }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Save failed");
+      localStorage.setItem("userId", data.id);
+      setUserId(String(data.id));
+      setProfileMsg("Profile saved!");
+    } catch (e) {
+      setProfileMsg(e.message);
+    }
+  }
+
+  async function saveIngredients() {
+    if (!userId) {
+      setProfileMsg("Save a profile first to store ingredients.");
+      return;
+    }
+    await fetch(`${API}/users/${userId}/ingredients`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ingredients }),
+    });
+    setProfileMsg("Ingredient list saved!");
+  }
+
+  async function loadIngredients() {
+    if (!userId) return;
+    const res = await fetch(`${API}/users/${userId}/ingredients`);
+    const data = await res.json();
+    setIngredients(data.ingredients);
+    setProfileMsg(data.ingredients.length ? "Loaded your last ingredient list." : "No saved list yet.");
+  }
 
   async function detect() {
     if (!file) return;
@@ -82,6 +145,23 @@ export default function App() {
     <div style={{ maxWidth: 600, margin: "40px auto", fontFamily: "sans-serif", padding: "0 12px" }}>
       <h1>SnapChef</h1>
 
+      {/* Profile (saved in PostgreSQL) */}
+      <div style={box}>
+        <b>Your profile</b>
+        <div style={{ marginTop: 8 }}>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="your name"
+          />{" "}
+          <button onClick={saveProfile}>{userId ? "Update profile" : "Save profile"}</button>
+        </div>
+        <p style={{ margin: "8px 0 0", fontSize: 14 }}>
+          Dietary restrictions are set in step 3 and saved with your profile.
+        </p>
+        {profileMsg && <p style={{ color: "green", margin: "8px 0 0" }}>{profileMsg}</p>}
+      </div>
+
       {/* 1. Upload */}
       <h3>1. Upload a photo</h3>
       <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files[0])} />
@@ -95,7 +175,12 @@ export default function App() {
       <div>
         <button onClick={detect} disabled={!file || detecting} style={{ marginTop: 10 }}>
           {detecting ? "Detecting... (can take up to 30 seconds)" : "Detect ingredients"}
-        </button>
+        </button>{" "}
+        {userId && (
+          <button onClick={loadIngredients} style={{ marginTop: 10 }}>
+            Load my last ingredients
+          </button>
+        )}
       </div>
       {detectError && <p style={{ color: "red" }}>{detectError}</p>}
 
@@ -116,7 +201,8 @@ export default function App() {
             onKeyDown={(e) => e.key === "Enter" && addItem()}
             placeholder="add an ingredient"
           />
-          <button onClick={addItem}>Add</button>
+          <button onClick={addItem}>Add</button>{" "}
+          <button onClick={saveIngredients}>Save this list</button>
 
           {/* 3. Preferences */}
           <h3>3. Your preferences</h3>
