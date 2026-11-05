@@ -174,7 +174,7 @@ def add_nutrition(recipe):
     recipe["allergens"] = sorted(allergens)
 
 
-#recipe generation (AI/NLP and ranking)
+#recipe generation (ai/nlp and ranking)
 @app.post("/generate-recipes")
 def generate_recipes(req: RecipeRequest):
     mine = [i.lower().strip() for i in req.ingredients]
