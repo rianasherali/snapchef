@@ -11,10 +11,13 @@ from typing import List
 from pydantic import BaseModel
 
 load_dotenv()
-MODEL = "gemini-3.8-flash"
+MODEL = "gemini-3.1-flash-lite"
 
 app = FastAPI(title="SnapChef")
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(
+    api_key=os.getenv("GEMINI_API_KEY"),
+    http_options=types.HttpOptions(timeout=30000),  # give up after 30 seconds
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -42,8 +45,8 @@ def health():
 
 #detect ingredients (computer vision)
 @app.post("/detect-ingredients")
-async def detect_ingredients(file: UploadFile = File(...)):
-    image_bytes = await file.read()
+def detect_ingredients(file: UploadFile = File(...)):
+    image_bytes = file.file.read()
     prompt = (
         "List every food ingredient visible in this photo, using simple generic "
         "names (say 'cheese' not 'shredded cheese'). "
